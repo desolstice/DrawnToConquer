@@ -1,0 +1,29 @@
+- [ ] Generate map
+  - [ ] Generate map mesh
+  - [ ] Texture map mesh
+  - [ ] Generate navigation meshes for land/water
+- [ ] Create units
+  - [ ] Units walk along navigation mesh
+- [ ] Command system
+  - [ ] Classic RTS point and click commands
+    - [ ] Command queueing
+    - [ ] click and drag formations
+  - [ ] Paths and line commands
+- [ ] Create structures
+  - [ ] Units spawn out of structures
+  - [ ] Consider defensive structures
+    - [ ] Should there be bunkers that can be set to automatically attract units?
+    - [ ] Automated defenses?
+- [ ] Combat
+  - [ ] Units recognize other nearby enemy units
+  - [ ] Units path to other nearby enemy units
+  - [ ] Units attack other nearby enemy units
+  - [ ] Units die when reaching 0 health
+  - [ ] Units heal over time
+  - [ ] Units are able to attack and destroy structure
+- [ ] Economy
+  - [ ] TBD
+- [ ] Co-op vs AI gamemode
+  - [ ] Basic spawn and swarm strategies.  AI will not be required to follow game rules that apply to player.
+  - [ ] Trigger system
+  - [ ] Networking
