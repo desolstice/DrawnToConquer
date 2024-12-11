@@ -1,6 +1,6 @@
 # DrawnToConquer
 
-Drawn To Conquer is going to be a new revolutionary RTS game.  The goal of this game is to slow down gameplay to where it embraces the strategy concept of an RTS more than the real time aspect.  One of the core goals of the game will be to reduce needed player micro where needed with an upper limit goal of around 150 actions per minute.
+Drawn To Conquer is going to be a new revolutionary RTS game.  The goal of this game is to slow down gameplay to where it embraces the strategy concept of an RTS more than the real time aspect.  One of the core goals of the game will be to reduce needed player micro where there is an upper limit goal of around 150 actions per minute.  Compared to other popular RTS games this maxes out somewhere around 1/3 of the total micro management needed, and should free up resources to focus on actually playing the game.
 
 # contributing
 ### Rules
