@@ -21,6 +21,9 @@ Drawn To Conquer is going to be a new revolutionary RTS game.  The goal of this 
   - [ ] Paths and line commands
 - [ ] Create structures
   - [ ] Units spawn out of structures
+  - [ ] Consider defensive structures
+    - [ ] Should there be bunkers that can be set to automatically attract units?
+    - [ ] Automated defenses?
 - [ ] Combat
   - [ ] Units recognize other nearby enemy units
   - [ ] Units path to other nearby enemy units
