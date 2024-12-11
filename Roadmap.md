@@ -1,7 +1,7 @@
 # Rapid prototype tasklist
 
 - [ ] Generate map
-  - [ ] Generate map mesh
+  - [x] Generate map mesh
   - [ ] Texture map mesh
   - [ ] Generate navigation meshes for land/water
 - [ ] Create units

@@ -46,6 +46,9 @@ public class WorldGenerator : MonoBehaviour
 
     private Mesh GenerateTerrainMesh(Texture2D voronoiTextureMap)
     {
+
+        float[,] noiseMap = PerlinNoise.GenerateNoiseMap(width, height, scale, octaves, lacunarity, persistence, seed);
+
         InputGeometry inputGeometry = new InputGeometry();
         for (int x = 0; x < width; x++)
         {
@@ -58,10 +61,25 @@ public class WorldGenerator : MonoBehaviour
         TriangleNetMesh triangleNetMesh = new TriangleNetMesh();
         triangleNetMesh.Triangulate(inputGeometry);
 
-        Mesh mesh = new Mesh();
-        mesh.vertices = triangleNetMesh.Vertices.Select(v => new Vector3((float)v.X, 0, (float)v.Y)).ToArray();
-        mesh.triangles = triangleNetMesh.Triangles.SelectMany(t => new int[] { t.P0, t.P1, t.P2 }).Reverse().ToArray();
-        mesh.uv = triangleNetMesh.Vertices.Select(v => new Vector2((float)v.X / width, (float)v.Y / height)).ToArray();
+        Vector3 CalculateHeight(TriangleNet.Data.Vertex vertex)
+        {
+
+            bool isLand = voronoiTextureMap.GetPixel((int)vertex.X * 4, (int)vertex.Y * 4).r != 0;
+
+            if (!isLand)
+            {
+                return new Vector3((float)vertex.X, 0, (float)vertex.Y);
+            }
+
+            return new Vector3((float)vertex.X, noiseMap[(int)vertex.X, (int)vertex.Y] * 4, (float)vertex.Y);
+        }
+
+        Mesh mesh = new()
+        {
+            vertices = triangleNetMesh.Vertices.Select(v => CalculateHeight(v)).ToArray(),
+            triangles = triangleNetMesh.Triangles.SelectMany(t => new int[] { t.P0, t.P1, t.P2 }).Reverse().ToArray(),
+            uv = triangleNetMesh.Vertices.Select(v => new Vector2((float)v.X / width, (float)v.Y / height)).ToArray()
+        };
 
         mesh.RecalculateBounds();
         mesh.RecalculateNormals();
@@ -70,15 +88,12 @@ public class WorldGenerator : MonoBehaviour
         return mesh;
     }
 
-    
-
     private void GenerateWorld()
     {
         //Higher this value is the larger the land masses will be.  Lower values will create more/smaller islands
         float territoryGrouping = 10;
 
         float[,] territoryTypeMap = PerlinNoise.GenerateNoiseMap(numberOfTerritories, numberOfTerritories, territoryGrouping, octaves, lacunarity, persistence, seed);
-
 
         VoronoiDiagram<Color32> voronoiDiagram = new VoronoiDiagram<Color32>(new Rect(0, 0, width * 4, height * 4));
         List<VoronoiDiagramSite<Color32>> sites = new List<VoronoiDiagramSite<Color32>>();
