@@ -1,11 +1,8 @@
-using NUnit.Framework;
 using PixelsForGlory.VoronoiDiagram;
 using System.Collections.Generic;
 using System.Linq;
-using System.Runtime.CompilerServices;
 using TriangleNet;
 using TriangleNet.Geometry;
-using TriangleNet.Tools;
 using UnityEngine;
 
 public class WorldGenerator : MonoBehaviour
@@ -71,7 +68,8 @@ public class WorldGenerator : MonoBehaviour
                 return new Vector3((float)vertex.X, 0, (float)vertex.Y);
             }
 
-            return new Vector3((float)vertex.X, noiseMap[(int)vertex.X, (int)vertex.Y] * 4, (float)vertex.Y);
+            //Default of 0.5f gurantees all land is at least 0.5f
+            return new Vector3((float)vertex.X, noiseMap[(int)vertex.X, (int)vertex.Y] * 4 + 0.5f, (float)vertex.Y);
         }
 
         Mesh mesh = new()
