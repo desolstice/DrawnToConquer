@@ -7,3 +7,4 @@
 
 # Assets used
 - https://assetstore.unity.com/packages/2d/textures-materials/water/simple-water-shader-urp-191449
+- https://opengameart.org/content/100-seamless-textures
