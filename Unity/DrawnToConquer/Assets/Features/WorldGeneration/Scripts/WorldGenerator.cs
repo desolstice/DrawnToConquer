@@ -24,6 +24,8 @@ public class WorldGenerator : MonoBehaviour
     [SerializeField] private int seed;
     [SerializeField] private int numberOfTerritories;
 
+    [SerializeField] private GameObject temp;
+
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
     {
@@ -38,7 +40,40 @@ public class WorldGenerator : MonoBehaviour
         lacunarity = (float)DoubleParameters.DefaultWorldLacunarity.GetValue();
         persistence = (float)DoubleParameters.DefaultWorldPersistence.GetValue();
 
-        GenerateWorld();
+        //GenerateWorld();
+
+        //Experimenting
+        //Plane is 11 vertices by 11 vertices
+        float[,] noiseMap = PerlinNoise.GenerateNoiseMap(11, 11, 0.4f, octaves, lacunarity, persistence, seed);
+
+        Texture2D texture = new Texture2D(11, 11);
+        for (int x = 0; x < 11; x++)
+        {
+            for (int y = 0; y < 11; y++)
+            {
+
+                var noiseValue = noiseMap[x, y];
+
+                //These need to add up to 1
+                float r = noiseValue > 0.5f ? 1 : 0;
+                float g = noiseValue > 0.5f ? 0 : 1;
+                float b = 0;
+                float a = 0;
+
+                Vector4 vector4 = new Vector4(r, g, b, a).normalized;
+                var color = new Color(vector4.x, vector4.y, vector4.z, vector4.w);
+
+                texture.SetPixel(x, y, color);
+            }
+        }
+
+        texture.Apply();
+
+
+        //temp.GetComponent<MeshRenderer>().material.SetTexture("Splat Map", texture);
+        temp.GetComponent<MeshRenderer>().material.mainTexture = texture;
+
+
     }
 
     private Mesh GenerateTerrainMesh(Texture2D voronoiTextureMap)
