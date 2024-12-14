@@ -19,3 +19,11 @@ The GNU AFFERO GENERAL PUBLIC LICENSE license was chosen with the hope that this
 # Discord
 
 Join the public discord to collaborate: https://discord.gg/3jxKbB2Nbw
+
+# 3rd-Party dependencies
+
+These are dependencies that are not open source and thus cannot be pushed to the open source github.  If you wish to build the project these dependencies must be acquired and imported.
+
+- (Agents navigation) v4.0.9 https://assetstore.unity.com/packages/tools/behavior-ai/agents-navigation-239233
+- (Rukhanka - ECS Animation System) v1.9.2 https://assetstore.unity.com/packages/tools/animation/rukhanka-ecs-animation-system-241472
+- (Shift - Complete Sci-Fi UI) v2.0.1 https://assetstore.unity.com/packages/2d/gui/shift-complete-sci-fi-ui-157943

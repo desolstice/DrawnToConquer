@@ -9,6 +9,10 @@
 /[Bb]uilds/
 /[Ll]ogs/
 /[Uu]ser[Ss]ettings/
+/Packages/com.projectdawn.navigation
+/Packages/com.rukhanka.animation
+/Assets/Shift - Complete Sci-Fi UI
+
 
 # MemoryCaptures can get excessive in size.
 # They also could contain extremely sensitive data
