@@ -40,7 +40,7 @@ public class WorldGenerator : MonoBehaviour
         lacunarity = (float)DoubleParameters.DefaultWorldLacunarity.GetValue();
         persistence = (float)DoubleParameters.DefaultWorldPersistence.GetValue();
 
-        //GenerateWorld();
+        GenerateWorld();
 
         //Experimenting
         //Plane is 11 vertices by 11 vertices
@@ -69,11 +69,107 @@ public class WorldGenerator : MonoBehaviour
 
         texture.Apply();
 
-
         //temp.GetComponent<MeshRenderer>().material.SetTexture("Splat Map", texture);
         temp.GetComponent<MeshRenderer>().material.mainTexture = texture;
+    }
 
+    private Texture2D GenerateSplatMap(Texture2D voronoiTextureMap, Vector3[] vertices)
+    {
+        Texture2D texture = new Texture2D(width, height);
 
+        float GetHeight(int x, int z, float defaultHeight)
+        {
+
+            if(x < 0 || x >= width || z < 0 || z >= height)
+            {
+                return defaultHeight;
+            }
+
+            var y = vertices[x + z * width].y;
+
+            if(y == 0)
+            {
+                return defaultHeight / 2;
+            }
+
+            return vertices[x + z * width].y;
+        }
+
+        float GetSlope(int x, int z)
+        {
+            float height = GetHeight(x, z, 0);
+            float heightLeft = GetHeight(x - 1, z, height);
+            float heightRight = GetHeight(x + 1, z, height);
+            float heightDown = GetHeight(x, z - 1, height);
+            float heightUp = GetHeight(x, z + 1, height);
+
+            float slopeX = heightLeft - heightRight;
+            float slopeZ = heightDown - heightUp;
+
+            var slope = new Vector2(slopeX, slopeZ);
+            var slopeMagnitude = slope.magnitude;
+
+            return slopeMagnitude;
+        }
+
+        List<Color32> colors = new List<Color32>();
+        List<Color32> colors2 = new List<Color32>();
+        Color32 sand = new Color32(255, 0, 0, 0);
+        Color32 water = new Color32(0, 0, 0, 255);
+
+        foreach (var vertex in vertices)
+        {
+            bool isLand = voronoiTextureMap.GetPixel((int)vertex.x * 4, (int)vertex.z * 4).r != 0;
+
+            if (!isLand)
+            {
+                colors.Add(water);
+                colors2.Add(water);
+                continue;
+            }
+
+            float grayScaleValue = Mathf.InverseLerp(0.5f, 1.5f, vertex.y/4);
+            byte grayScale = (byte)(grayScaleValue * 255);
+
+            Color32 grayScaleFromNoise = new Color32(grayScale, grayScale, grayScale, 255);
+            colors2.Add(grayScaleFromNoise);
+
+            if (vertex.y < 1f)
+            {
+                colors.Add(sand);
+                continue;
+            }
+
+            //Sand weighting is 0 at y = 1 and 1 at y = 0.5f anything below 0.5f is water
+            float sandWeighting = vertex.y < 1.5f ? (1.5f - vertex.y) * 2 : 0;
+
+            //Rocky terrain becomes more likely the higher we get.  After we can no longer have sand.
+            float rockWeighting = vertex.y - 1.5f;
+
+            //Grassy anywhere we are relatively flat
+            float grassWeighting = Mathf.Clamp01(1 - GetSlope((int)vertex.x, (int)vertex.z));
+
+            float waterWeighting = vertex.y < 0.5f ? 1000 : 0;
+
+            Vector4 values = new(
+                sandWeighting,
+                rockWeighting,
+                grassWeighting,
+                waterWeighting
+            );
+
+            values.Normalize();
+
+            colors.Add(new Color(values.x, values.y, values.z, 1));
+        }
+
+        //colors.Reverse();
+
+        texture.SetPixels32(colors2.ToArray());
+
+        texture.Apply();
+
+        return texture;
     }
 
     private Mesh GenerateTerrainMesh(Texture2D voronoiTextureMap)
@@ -81,12 +177,39 @@ public class WorldGenerator : MonoBehaviour
 
         float[,] noiseMap = PerlinNoise.GenerateNoiseMap(width, height, scale, octaves, lacunarity, persistence, seed);
 
+        //Calculate min and max noise values
+        float minNoiseValue = float.MaxValue;
+        float maxNoiseValue = float.MinValue;
+        for(int x = 0; x < width; x++)
+        {
+            for(int y = 0; y < height; y++)
+            {
+                bool isLand = voronoiTextureMap.GetPixel(x * 4, y * 4).r != 0;
+
+                if (!isLand)
+                {
+                    continue;
+                }
+
+                if (noiseMap[x, y] < minNoiseValue)
+                {
+                    minNoiseValue = noiseMap[x, y];
+                }
+
+                if (noiseMap[x, y] > maxNoiseValue)
+                {
+                    maxNoiseValue = noiseMap[x, y];
+                }
+            }
+        }
+
+
         InputGeometry inputGeometry = new InputGeometry();
         for (int x = 0; x < width; x++)
         {
             for (int y = 0; y < height; y++)
             {
-                inputGeometry.AddPoint(x, y);
+                inputGeometry.AddPoint(y, x);
             }
         }
 
@@ -95,7 +218,6 @@ public class WorldGenerator : MonoBehaviour
 
         Vector3 CalculateHeight(TriangleNet.Data.Vertex vertex)
         {
-
             bool isLand = voronoiTextureMap.GetPixel((int)vertex.X * 4, (int)vertex.Y * 4).r != 0;
 
             if (!isLand)
@@ -103,8 +225,11 @@ public class WorldGenerator : MonoBehaviour
                 return new Vector3((float)vertex.X, 0, (float)vertex.Y);
             }
 
+            var noiseValue = noiseMap[(int)vertex.X, (int)vertex.Y];
+            var normalizedNoiseValue = Mathf.InverseLerp(minNoiseValue, maxNoiseValue, noiseValue);
+
             //Default of 0.5f gurantees all land is at least 0.5f
-            return new Vector3((float)vertex.X, noiseMap[(int)vertex.X, (int)vertex.Y] * 4 + 0.5f, (float)vertex.Y);
+            return new Vector3((float)vertex.X, normalizedNoiseValue * 4 + 0.5f, (float)vertex.Y);
         }
 
         Mesh mesh = new()
@@ -174,6 +299,8 @@ public class WorldGenerator : MonoBehaviour
 
         meshFilter.sharedMesh = mesh;
 
-        meshRenderer.material.mainTexture = texture;
+
+        var splatMap = GenerateSplatMap(texture, mesh.vertices);
+        meshRenderer.material.mainTexture = splatMap;
     }
 }
