@@ -173,7 +173,7 @@ public class WorldGenerator : MonoBehaviour
     //    return texture;
     //}
 
-    private Mesh GenerateTerrainMesh(Texture2D voronoiTextureMap, Texture2D voronoiBiomeMap, List<Thresholds> biomes)
+    private (List<Vector3> vertices, List<int> triangles, List<Vector2> uvs) GenerateTerrainMesh(Texture2D voronoiTextureMap, Texture2D voronoiBiomeMap, List<Thresholds> biomes)
     {
 
         float[,] noiseMap = PerlinNoise.GenerateNoiseMap(width, height, scale, octaves, lacunarity, persistence, seed);
@@ -205,17 +205,16 @@ public class WorldGenerator : MonoBehaviour
         }
 
 
-        InputGeometry inputGeometry = new InputGeometry();
+        InputGeometry inputGeometry = new();
         for (int x = 0; x < width; x++)
         {
             for (int y = 0; y < height; y++)
             {
-                inputGeometry.AddPoint(y, x);
-                for (float smallStepX = 0.25f; smallStepX < 1f; smallStepX += 0.25f)
+                for (int smallStepX = 0; smallStepX < 4; smallStepX++)
                 {
-                    for (float smallStepY = 0.25f; smallStepY < 1f; smallStepY += 0.25f)
+                    for (int smallStepY = 0; smallStepY < 4; smallStepY++)
                     {
-                        inputGeometry.AddPoint(y + smallStepY, x + smallStepX);
+                        inputGeometry.AddPoint(y + (smallStepY/4f), x + (smallStepX/4f));
                     }
                 }
             }
@@ -250,18 +249,24 @@ public class WorldGenerator : MonoBehaviour
             return new Vector3((float)vertex.X, biome.targetHeight, (float)vertex.Y);
         }
 
-        Mesh mesh = new()
-        {
-            vertices = triangleNetMesh.Vertices.Select(v => CalculateHeight(v)).ToArray(),
-            triangles = triangleNetMesh.Triangles.SelectMany(t => new int[] { t.P0, t.P1, t.P2 }).Reverse().ToArray(),
-            uv = triangleNetMesh.Vertices.Select(v => new Vector2((float)v.X / width, (float)v.Y / height)).ToArray()
-        };
+        //Mesh mesh = new()
+        //{
+        //    vertices = triangleNetMesh.Vertices.Select(v => CalculateHeight(v)).ToArray(),
+        //    triangles = triangleNetMesh.Triangles.SelectMany(t => new int[] { t.P0, t.P1, t.P2 }).Reverse().ToArray(),
+        //    uv = triangleNetMesh.Vertices.Select(v => new Vector2((float)v.X / width, (float)v.Y / height)).ToArray()
+        //};
 
-        mesh.RecalculateBounds();
-        mesh.RecalculateNormals();
-        mesh.RecalculateTangents();
+        //mesh.RecalculateBounds();
+        //mesh.RecalculateNormals();
+        //mesh.RecalculateTangents();
 
-        return mesh;
+        //return mesh;
+
+        return (
+            triangleNetMesh.Vertices.Select(v => CalculateHeight(v)).ToList(),
+            triangleNetMesh.Triangles.SelectMany(t => new int[] { t.P0, t.P1, t.P2 }).Reverse().ToList(),
+            triangleNetMesh.Vertices.Select(v => new Vector2((float)v.X / width, (float)v.Y / height)).ToList()
+        );
     }
 
     struct Thresholds
@@ -356,9 +361,20 @@ public class WorldGenerator : MonoBehaviour
         biomeTexture.SetPixels32(biomeVoronoi.Get1DSampleArray());
         biomeTexture.Apply();
 
-        var mesh = GenerateTerrainMesh(landTypeTexture, biomeTexture, biomeThresholds);
+        Color32 blue = new Color32(0, 0, 255, 255);
 
-        List<Mesh> chunks = GenerateChunks(mesh, 50000);
+        Texture2D combinedTextures = new Texture2D(width * 4, height * 4);
+        combinedTextures.SetPixels32(landTypeTexture.GetPixels32().Zip(biomeTexture.GetPixels32(), (a, b) => a.r != 255 ? blue : b).ToArray());
+        combinedTextures.Apply();
+
+        var (vertices, triangles, uvs) = GenerateTerrainMesh(landTypeTexture, biomeTexture, biomeThresholds);
+
+        Debug.Log("Starting to generate chunks");
+
+        List<Mesh> chunks = GenerateChunks(vertices, triangles, uvs, 50000);
+
+        Debug.Log("Done generating chunks");
+
         foreach(var chunk in chunks)
         {
             GameObject chunkObject = new GameObject("Chunk");
@@ -372,9 +388,10 @@ public class WorldGenerator : MonoBehaviour
 
             MeshRenderer meshRenderer = chunkObject.AddComponent<MeshRenderer>();
             meshRenderer.material = baseMaterial;
+            meshRenderer.material.mainTexture = combinedTextures;
         }
 
-        gameObject.SetActive(false);
+        //gameObject.SetActive(false);
 
         //meshFilter.sharedMesh = mesh;
 
@@ -382,36 +399,40 @@ public class WorldGenerator : MonoBehaviour
     }
 
     //Break large mesh up into smaller meshes
-    private List<Mesh> GenerateChunks(Mesh mesh, int maxVerticesPerMesh)
+    private List<Mesh> GenerateChunks(List<Vector3> vertices, List<int> triangles, List<Vector2> uvs, int maxVerticesPerMesh)
     {
-        int numberOfChunks = Mathf.CeilToInt((float)mesh.vertexCount / maxVerticesPerMesh);
 
         List<Mesh> meshes = new();
 
-        IEnumerable<IEnumerable<int>> triangles = mesh.triangles.Batch(3);
+        var triangleBatch = triangles.Batch(3).Batch(maxVerticesPerMesh/3);
 
-        for (int i = 0; i < numberOfChunks; i++)
+        foreach (var batch in triangleBatch)
         {
             Dictionary<int, int> seenVertices = new();
+            int vertexCount = 0;
             Mesh chunk = new();
 
-            List<Vector3> vertices = new();
-            List<Vector2> uvs = new();
-            List<int> newTriangles = new();
+            List<Vector3> newVertices = new(maxVerticesPerMesh);
+            List<Vector2> newUvs = new(maxVerticesPerMesh);
+            List<int> newTriangles = new(maxVerticesPerMesh/3);
 
-            foreach (var triangle in triangles)
+            foreach (var triangle in batch)
             {
-                triangle.Where(triangle => !seenVertices.ContainsKey(triangle)).ForEach(vertex =>
+                foreach(var vertex in triangle)
                 {
-                    seenVertices.Add(vertex, vertices.Count);
-                });
+                    if (!seenVertices.ContainsKey(vertex))
+                    {
+                        seenVertices.Add(vertex, vertexCount++);
+                        newVertices.Add(vertices[vertex]);
+                        newUvs.Add(uvs[vertex]);
+                    }
+                    newTriangles.Add(seenVertices[vertex]);
+                }
 
-                newTriangles.AddRange(triangle.Select(vertex => seenVertices[vertex]));
-                uvs.AddRange(triangle.Select(vertex => mesh.uv[vertex]));
             }
 
-            chunk.vertices = vertices.ToArray();
-            chunk.uv = uvs.ToArray();
+            chunk.vertices = newVertices.ToArray();
+            chunk.uv = newUvs.ToArray();
             chunk.triangles = newTriangles.ToArray();
 
             chunk.RecalculateBounds();
