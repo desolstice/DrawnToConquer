@@ -58,10 +58,10 @@ Shader "Unlit/SplatShader2"
                 // sample the texture
                 fixed4 splatmapMask = tex2D(_MainTex, i.uv);
 
-                fixed4 combinedColor = tex2D (_Texture1, i.uv) * splatmapMask.r;
-                combinedColor += tex2D (_Texture2, i.uv) * splatmapMask.g;
-                combinedColor += tex2D (_Texture3, i.uv) * splatmapMask.b;
-                combinedColor += tex2D (_Texture4, i.uv) * splatmapMask.a;
+                fixed4 combinedColor = tex2D (_Texture1, i.uv * 20) * splatmapMask.r;
+                combinedColor += tex2D (_Texture2, i.uv * 20) * splatmapMask.g;
+                combinedColor += tex2D (_Texture3, i.uv * 20) * splatmapMask.b;
+                combinedColor += tex2D (_Texture4, i.uv * 20) * splatmapMask.a;
 
                 // apply fog
                 //UNITY_APPLY_FOG(i.fogCoord, combinedColor);

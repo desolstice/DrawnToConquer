@@ -173,7 +173,41 @@ public class WorldGenerator : MonoBehaviour
     //    return texture;
     //}
 
-    private (List<Vector3> vertices, List<int> triangles, List<Vector2> uvs) GenerateTerrainMesh(Texture2D voronoiTextureMap, Texture2D voronoiBiomeMap, List<Thresholds> biomes)
+    private Texture2D GenerateSplatMap(LookupBuffer<Color32> combinedBiomeMap)
+    {
+        Texture2D texture = new Texture2D(width * 4, height * 4);
+
+        List<Color32> colors = new List<Color32>();
+
+        Dictionary<byte, Color32> biomeColors = new Dictionary<byte, Color32>
+        {
+            { 0, new Color32(0, 0, 0, 0) },
+            { 32, new Color32(255, 0, 0, 0) },
+            { 64, new Color32(0, 255, 0, 0) },
+            { 128, new Color32(0, 0, 255, 0) },
+            { 255, new Color32(0, 0, 0, 255) }
+        };
+
+        for (int x = 0; x < width * 4; x++)
+        {
+            for (int y = 0; y < height * 4; y++)
+            {
+                var biome = combinedBiomeMap.Get(y, x).r;
+                var color = biomeColors[biome];
+                colors.Add(color);
+            }
+        }
+
+        //colors.Reverse();
+
+        texture.SetPixels32(colors.ToArray());
+
+        texture.Apply();
+
+        return texture;
+    }
+
+    private (List<Vector3> vertices, List<int> triangles, List<Vector2> uvs) GenerateTerrainMesh(LookupBuffer<Color32> voronoiTextureMap, LookupBuffer<Color32> voronoiBiomeMap, List<Thresholds> biomes)
     {
 
         float[,] noiseMap = PerlinNoise.GenerateNoiseMap(width, height, scale, octaves, lacunarity, persistence, seed);
@@ -181,11 +215,11 @@ public class WorldGenerator : MonoBehaviour
         //Calculate min and max noise values
         float minNoiseValue = float.MaxValue;
         float maxNoiseValue = float.MinValue;
-        for(int x = 0; x < width; x++)
+        for (int x = 0; x < width; x++)
         {
-            for(int y = 0; y < height; y++)
+            for (int y = 0; y < height; y++)
             {
-                bool isLand = voronoiTextureMap.GetPixel(x * 4, y * 4).r != 0;
+                bool isLand = voronoiTextureMap.Get(x * 4, y * 4).r != 0;
 
                 if (!isLand)
                 {
@@ -204,6 +238,20 @@ public class WorldGenerator : MonoBehaviour
             }
         }
 
+        List<Vector2Int> GetNeighbors(int x, int y)
+        {
+            return new List<Vector2Int>
+            {
+                new Vector2Int(x - 1, y),
+                new Vector2Int(x + 1, y),
+                new Vector2Int(x, y - 1),
+                new Vector2Int(x, y + 1),
+                new Vector2Int(x - 1, y - 1),
+                new Vector2Int(x + 1, y + 1),
+                new Vector2Int(x - 1, y + 1),
+                new Vector2Int(x + 1, y - 1)
+            };
+        } 
 
         InputGeometry inputGeometry = new();
         for (int x = 0; x < width; x++)
@@ -214,7 +262,20 @@ public class WorldGenerator : MonoBehaviour
                 {
                     for (int smallStepY = 0; smallStepY < 4; smallStepY++)
                     {
-                        inputGeometry.AddPoint(y + (smallStepY/4f), x + (smallStepX/4f));
+
+                        if(
+                            x != 0 
+                            && y != 0 
+                            && x != width - 1 
+                            && y != height - 1 
+                            && voronoiTextureMap.Get(y * 4 + smallStepY, x * 4 + smallStepX).r == 0 
+                            && GetNeighbors(y * 4 + smallStepY, x * 4 + smallStepX).All(neighbor => voronoiTextureMap.Get(neighbor.x, neighbor.y).r == 0)
+                            && GetNeighbors(y * 4 + smallStepY, x * 4 + smallStepX).All(neighbor => GetNeighbors(neighbor.x, neighbor.y).All(n2 => voronoiTextureMap.Get(n2.x, n2.y).r == 0))
+                        ) {
+                            continue;
+                        }
+
+                        inputGeometry.AddPoint(y + (smallStepY / 4f), x + (smallStepX / 4f));
                     }
                 }
             }
@@ -229,7 +290,7 @@ public class WorldGenerator : MonoBehaviour
             int roundedX = Mathf.RoundToInt((float)vertex.X * 4);
             int roundedY = Mathf.RoundToInt((float)vertex.Y * 4);
 
-            bool isLand = 0 != voronoiTextureMap.GetPixel(
+            bool isLand = 0 != voronoiTextureMap.Get(
                 roundedX,
                 roundedY
             ).r;
@@ -240,7 +301,7 @@ public class WorldGenerator : MonoBehaviour
             }
 
             //Very inefficient.  Replace later.
-            Thresholds biome = biomes.FirstOrDefault(biome => Mathf.RoundToInt(voronoiBiomeMap.GetPixel(roundedX, roundedY).r*255) == biome.redIdentifier);
+            Thresholds biome = biomes.FirstOrDefault(biome => Mathf.RoundToInt(voronoiBiomeMap.Get(roundedX, roundedY).r) == biome.redIdentifier);
 
             //var noiseValue = noiseMap[(int)vertex.X, (int)vertex.Y];
             //var normalizedNoiseValue = Mathf.InverseLerp(minNoiseValue, maxNoiseValue, noiseValue);
@@ -276,7 +337,7 @@ public class WorldGenerator : MonoBehaviour
         public byte redIdentifier;
 
         //Eventually change this to a customer generator
-        public int targetHeight;
+        public float targetHeight;
     }
 
     private VoronoiDiagram<Color32> GenerateVoronoi(int numberOfCells, float[,] noiseMap, List<Thresholds> thresholds)
@@ -327,6 +388,48 @@ public class WorldGenerator : MonoBehaviour
         return voronoiDiagram;
     }
 
+    private class LookupBuffer<T>{
+        int width;
+        int height;
+        T[] buffer;
+
+        public LookupBuffer(int width, int height)
+        {
+            this.width = width;
+            this.height = height;
+            this.buffer = new T[width*height];
+        }
+
+        public LookupBuffer(int width, int height, T[] buffer)
+        {
+            this.width = width;
+            this.height = height;
+            this.buffer = buffer;
+        }
+
+        public void Set(int x, int y, T value)
+        {
+            if (x < 0 || x >= width || y < 0 || y >= height)
+            {
+                return;
+            }
+
+            buffer[x + y * width] = value;
+        }
+
+        public T Get(int x, int y, T defaultReturn = default)
+        {
+            if(x < 0 || x >= width || y < 0 || y >= height)
+            {
+                return defaultReturn;
+            }
+
+            return buffer[x + y * width];
+        }
+
+        public T[] values => buffer;
+    }
+
     private void GenerateWorld()
     {
         //Higher this value is the larger the land masses will be.  Lower values will create more/smaller islands
@@ -344,7 +447,8 @@ public class WorldGenerator : MonoBehaviour
 
         var biomeThresholds = new List<Thresholds>
         {
-            new Thresholds { max = 0.3f, name = "Mountain", redIdentifier = 255, targetHeight = 5},
+            new Thresholds{ max = 0f, name = "Beach", redIdentifier = 32, targetHeight = 0.5f},
+            new Thresholds { max = 0.3f, name = "Mountain", redIdentifier = 255, targetHeight = 2},
             new Thresholds { max = 0.4f, name = "Forest", redIdentifier = 128, targetHeight = 1 },
             new Thresholds { max = 0.7f, name = "Grassland", redIdentifier = 64, targetHeight = 1 },
             new Thresholds { max = 0.85f, name = "Forest", redIdentifier = 128, targetHeight = 1 },
@@ -353,29 +457,95 @@ public class WorldGenerator : MonoBehaviour
 
         var biomeVoronoi = GenerateVoronoi(numberOfTerritories * 4, biomeMap, biomeThresholds);
 
-        Texture2D landTypeTexture = new Texture2D(width * 4, height * 4);
-        landTypeTexture.SetPixels32(territoryVoronoi.Get1DSampleArray());
-        landTypeTexture.Apply();
+        LookupBuffer<Color32> landTypeLookup = new LookupBuffer<Color32>(width * 4, height * 4, territoryVoronoi.Get1DSampleArray());
 
-        Texture2D biomeTexture = new Texture2D(width * 4, height * 4);
-        biomeTexture.SetPixels32(biomeVoronoi.Get1DSampleArray());
-        biomeTexture.Apply();
+        LookupBuffer<Color32> biomeLookup = new LookupBuffer<Color32>(width * 4, height * 4, biomeVoronoi.Get1DSampleArray());
+
+        byte SampleLandType(int x2, int y2)
+        {
+            if ((x2 < 0) || (x2 >= (width * 4)) || (y2 < 0) || (y2 >= (height * 4)))
+            {
+                var a = (x2 < 0) || (x2 >= (width * 4)) || (y2 < 0) || (y2 >= (height * 4));
+                var b = x2 < 0;
+                var c = x2 >= (width * 4);
+                var d = y2 < 0;
+                var e = y2 >= (height * 4);
+                var f = b || c || d || e;
+                return 255;
+            }
+
+            return landTypeLookup.Get(x2, y2).r;
+        }
+
+        Color32 beach = new Color32(0, 255, 0, 255);//new Color32(254, 0, 0, 0);
+        List<Vector2Int> GetNeighbors(int x, int y)
+        {
+            return new List<Vector2Int>
+            {
+                new Vector2Int(x - 1, y),
+                new Vector2Int(x + 1, y),
+                new Vector2Int(x, y - 1),
+                new Vector2Int(x, y + 1),
+                new Vector2Int(x - 1, y - 1),
+                new Vector2Int(x + 1, y + 1),
+                new Vector2Int(x - 1, y + 1),
+                new Vector2Int(x + 1, y - 1)
+            };
+        } 
+
+        foreach (var x in Enumerable.Range(0, width * 4))
+        {
+            foreach(var y in Enumerable.Range(0, height * 4))
+            {
+                var landType = landTypeLookup.Get(x, y);
+
+                if(landType.r == 0)
+                {
+                    continue;
+                }
+
+                //Neighbors
+                List<Vector2Int> neighbors = GetNeighbors(x, y);
+
+                // Check if we are on land but neighbor water
+                if (neighbors.Any(neighbor => SampleLandType(neighbor.x, neighbor.y) == 0) && biomeLookup.Get(x, y).r != 255)
+                {
+                    biomeLookup.Set(x, y, beach);
+                    //Set surrounding pixels to beach
+                    foreach (var neighbor in neighbors.SelectMany(neighbor => GetNeighbors(neighbor.x, neighbor.y)))
+                    {
+                        if (SampleLandType(neighbor.x, neighbor.y) == 255)
+                        {
+                            //Don't overwrite mountain
+                            if (biomeLookup.Get(neighbor.x, neighbor.y).r != 255)
+                            {
+                                biomeLookup.Set(neighbor.x, neighbor.y, new Color32(32, 255, 255, 255));
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         Color32 blue = new Color32(0, 0, 255, 255);
 
-        Texture2D combinedTextures = new Texture2D(width * 4, height * 4);
-        combinedTextures.SetPixels32(landTypeTexture.GetPixels32().Zip(biomeTexture.GetPixels32(), (a, b) => a.r != 255 ? blue : b).ToArray());
+        var combinedLookup = new LookupBuffer<Color32>(width * 4, height * 4, landTypeLookup.values.Zip(biomeLookup.values, (a, b) => a.r != 255 ? blue : b).ToArray());
+
+        Texture2D combinedTextures = new(width * 4, height * 4);
+        combinedTextures.SetPixels32(combinedLookup.values);
         combinedTextures.Apply();
 
-        var (vertices, triangles, uvs) = GenerateTerrainMesh(landTypeTexture, biomeTexture, biomeThresholds);
+        var (vertices, triangles, uvs) = GenerateTerrainMesh(landTypeLookup, biomeLookup, biomeThresholds);
 
         Debug.Log("Starting to generate chunks");
 
-        List<Mesh> chunks = GenerateChunks(vertices, triangles, uvs, 50000);
+        List<Mesh> chunks = GenerateChunks(BuildAdjacency(vertices, triangles), triangles, uvs, 50000);
 
         Debug.Log("Done generating chunks");
 
-        foreach(var chunk in chunks)
+        var splatTexture = GenerateSplatMap(combinedLookup);
+
+        foreach (var chunk in chunks)
         {
             GameObject chunkObject = new GameObject("Chunk");
             chunkObject.transform.parent = transform;
@@ -388,14 +558,14 @@ public class WorldGenerator : MonoBehaviour
 
             MeshRenderer meshRenderer = chunkObject.AddComponent<MeshRenderer>();
             meshRenderer.material = baseMaterial;
-            meshRenderer.material.mainTexture = combinedTextures;
+            meshRenderer.material.mainTexture = splatTexture;
         }
 
         //gameObject.SetActive(false);
 
         //meshFilter.sharedMesh = mesh;
 
-        //meshRenderer.material.mainTexture = biomeTexture;
+        //meshRenderer.material.mainTexture = GenerateSplatMap(combinedLookup);
     }
 
     //Break large mesh up into smaller meshes
@@ -443,5 +613,87 @@ public class WorldGenerator : MonoBehaviour
         }
 
         return meshes;
+    }
+
+    /// <summary>
+    /// Build a neighbor list for each vertex by examining the mesh triangles.
+    /// </summary>
+    private List<Vector3> BuildAdjacency(List<Vector3> vertices, List<int> _triangles)
+    {
+        int vertexCount = vertices.Count;
+        List<int>[] adjacencyList = new List<int>[vertexCount];
+        for (int i = 0; i < vertexCount; i++)
+        {
+            adjacencyList[i] = new List<int>();
+        }
+
+        // Examine each triangle in the mesh
+        int[] triangles = _triangles.ToArray();
+        for (int i = 0; i < triangles.Length; i += 3)
+        {
+            int i1 = triangles[i];
+            int i2 = triangles[i + 1];
+            int i3 = triangles[i + 2];
+
+            // Add neighbors for each corner of this triangle
+            if (!adjacencyList[i1].Contains(i2)) adjacencyList[i1].Add(i2);
+            if (!adjacencyList[i1].Contains(i3)) adjacencyList[i1].Add(i3);
+
+            if (!adjacencyList[i2].Contains(i1)) adjacencyList[i2].Add(i1);
+            if (!adjacencyList[i2].Contains(i3)) adjacencyList[i2].Add(i3);
+
+            if (!adjacencyList[i3].Contains(i1)) adjacencyList[i3].Add(i1);
+            if (!adjacencyList[i3].Contains(i2)) adjacencyList[i3].Add(i2);
+        }
+
+        return SmoothMeshHeights(vertices, adjacencyList, 5, 0.5f);
+    }
+
+    /// <summary>
+    /// Smooth the Y heights of the mesh vertices using a simple neighbor-average approach.
+    /// </summary>
+    private List<Vector3> SmoothMeshHeights(List<Vector3> vertices, List<int>[] adjacencyList, int smoothingIterations, float blendFactor) 
+    {
+
+        // We only want to adjust the y-component (height) while preserving x and z
+        for (int iteration = 0; iteration < smoothingIterations; iteration++)
+        {
+            Vector3[] newVertices = new Vector3[vertices.Count];
+
+            for (int v = 0; v < vertices.Count; v++)
+            {
+                // Current vertex
+                Vector3 currentVertex = vertices[v];
+
+                if(currentVertex.y == 0)
+                {
+                    newVertices[v] = currentVertex;
+                    continue;
+                }
+
+                // Calculate the average height of neighbors
+                float sumHeights = currentVertex.y;
+                int neighborCount = 1;  // start with 1 to include the vertex itself
+
+                foreach (int neighborIndex in adjacencyList[v])
+                {
+                    sumHeights += vertices[neighborIndex].y;
+                    neighborCount++;
+                }
+
+                float averageHeight = sumHeights / neighborCount;
+
+                // Blend our current height toward the average height
+                float blendedHeight = Mathf.Lerp(currentVertex.y, averageHeight, blendFactor);
+
+                // Assign the new vertex position
+                newVertices[v] = new Vector3(currentVertex.x, blendedHeight, currentVertex.z);
+            }
+
+            // Update the working vertices array for the next iteration
+            vertices = newVertices.ToList();
+        }
+
+        return vertices;
     }
 }
