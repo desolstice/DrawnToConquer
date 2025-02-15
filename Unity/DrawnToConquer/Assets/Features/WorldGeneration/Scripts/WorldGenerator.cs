@@ -4,7 +4,10 @@ using System.Collections.Generic;
 using System.Linq;
 using TriangleNet;
 using TriangleNet.Geometry;
+using Unity.AI.Navigation;
+using Unity.Entities.UniversalDelegates;
 using UnityEngine;
+using UnityEngine.AI;
 
 public class WorldGenerator : MonoBehaviour
 {
@@ -26,6 +29,9 @@ public class WorldGenerator : MonoBehaviour
     [SerializeField] private int numberOfTerritories;
 
     [SerializeField] private GameObject temp;
+    [SerializeField] private GameObject planeDebug;
+    [SerializeField] private GameObject planeDebug2;
+    [SerializeField] private GameObject planeDebug3;
 
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
@@ -207,7 +213,7 @@ public class WorldGenerator : MonoBehaviour
         return texture;
     }
 
-    private (List<Vector3> vertices, List<int> triangles, List<Vector2> uvs) GenerateTerrainMesh(LookupBuffer<Color32> voronoiTextureMap, LookupBuffer<Color32> voronoiBiomeMap, List<Thresholds> biomes)
+    private (List<Vector3> vertices, List<int> triangles, List<Vector2> uvs) GenerateTerrainMesh(LookupBuffer<Color32> voronoiTextureMap, LookupBuffer<Color32> voronoiBiomeMap, List<Thresholds> biomes, List<Vector3> voronoiEdgeVertices)
     {
 
         float[,] noiseMap = PerlinNoise.GenerateNoiseMap(width, height, scale, octaves, lacunarity, persistence, seed);
@@ -251,34 +257,61 @@ public class WorldGenerator : MonoBehaviour
                 new Vector2Int(x - 1, y + 1),
                 new Vector2Int(x + 1, y - 1)
             };
-        } 
+        }
+
+        int smallStepSize = 4;
 
         InputGeometry inputGeometry = new();
-        for (int x = 0; x < width; x++)
+        //for (int x = 0; x < width; x++)
+        //{
+        //    for (int y = 0; y < height; y++)
+        //    {
+        //        for (int smallStepX = 0; smallStepX < smallStepSize; smallStepX+=2)
+        //        {
+        //            for (int smallStepY = 0; smallStepY < smallStepSize; smallStepY+=2)
+        //            {
+
+        //                if(
+        //                    //Make sure to add all the points on the edge of the map
+        //                    x != 0 
+        //                    && y != 0 
+        //                    && x != width - 1 
+        //                    && y != height - 1
+
+        //                    //Checking specifically water points
+        //                    && voronoiTextureMap.Get(y * 4 + smallStepY, x * 4 + smallStepX).r == 0
+
+        //                    //Checking if all neighbors are water
+        //                    && GetNeighbors(y * 4 + smallStepY, x * 4 + smallStepX).All(neighbor => voronoiTextureMap.Get(neighbor.x, neighbor.y).r == 0)
+
+        //                    //Checking if all neighbors of neighbors are water
+        //                    && GetNeighbors(y * 4 + smallStepY, x * 4 + smallStepX).All(neighbor => GetNeighbors(neighbor.x, neighbor.y).All(n2 => voronoiTextureMap.Get(n2.x, n2.y).r == 0))
+        //                ) {
+        //                    continue;
+        //                }
+
+        //                inputGeometry.AddPoint(y + (smallStepY / 4), x + (smallStepX / 4));
+        //            }
+        //        }
+        //    }
+        //}
+
+        //Add vertices around the border
+        for(int x = 0; x < width; x++)
         {
-            for (int y = 0; y < height; y++)
-            {
-                for (int smallStepX = 0; smallStepX < 4; smallStepX++)
-                {
-                    for (int smallStepY = 0; smallStepY < 4; smallStepY++)
-                    {
+            inputGeometry.AddPoint(0, x);
+            inputGeometry.AddPoint(height-1, x);
+        }
 
-                        if(
-                            x != 0 
-                            && y != 0 
-                            && x != width - 1 
-                            && y != height - 1 
-                            && voronoiTextureMap.Get(y * 4 + smallStepY, x * 4 + smallStepX).r == 0 
-                            && GetNeighbors(y * 4 + smallStepY, x * 4 + smallStepX).All(neighbor => voronoiTextureMap.Get(neighbor.x, neighbor.y).r == 0)
-                            && GetNeighbors(y * 4 + smallStepY, x * 4 + smallStepX).All(neighbor => GetNeighbors(neighbor.x, neighbor.y).All(n2 => voronoiTextureMap.Get(n2.x, n2.y).r == 0))
-                        ) {
-                            continue;
-                        }
+        for (int y = 0; y < height; y++)
+        {
+            inputGeometry.AddPoint(y, 0);
+            inputGeometry.AddPoint(y, width - 1);
+        }
 
-                        inputGeometry.AddPoint(y + (smallStepY / 4f), x + (smallStepX / 4f));
-                    }
-                }
-            }
+        foreach (var vertice in voronoiEdgeVertices)
+        {
+            inputGeometry.AddPoint(vertice.x, vertice.z);
         }
 
         TriangleNetMesh triangleNetMesh = new TriangleNetMesh();
@@ -438,6 +471,7 @@ public class WorldGenerator : MonoBehaviour
 
         float[,] territoryTypeMap = PerlinNoise.GenerateNoiseMap(numberOfTerritories, numberOfTerritories, territoryGrouping, octaves, lacunarity, persistence, seed);
         float[,] biomeMap = PerlinNoise.GenerateNoiseMap(numberOfTerritories*4, numberOfTerritories*4, biomeGrouping, octaves, lacunarity, persistence, seed);
+        float[,] terrainTextureMap = PerlinNoise.GenerateNoiseMap(width * 4, height * 4, scale, octaves, lacunarity, persistence, seed);
 
         var territoryVoronoi = GenerateVoronoi(numberOfTerritories, territoryTypeMap, new List<Thresholds>
         {
@@ -458,8 +492,8 @@ public class WorldGenerator : MonoBehaviour
         var biomeVoronoi = GenerateVoronoi(numberOfTerritories * 4, biomeMap, biomeThresholds);
 
         LookupBuffer<Color32> landTypeLookup = new LookupBuffer<Color32>(width * 4, height * 4, territoryVoronoi.Get1DSampleArray());
-
         LookupBuffer<Color32> biomeLookup = new LookupBuffer<Color32>(width * 4, height * 4, biomeVoronoi.Get1DSampleArray());
+        LookupBuffer<Color32> terrainTexture = new LookupBuffer<Color32>(width * 4, height * 4);
 
         byte SampleLandType(int x2, int y2)
         {
@@ -477,7 +511,6 @@ public class WorldGenerator : MonoBehaviour
             return landTypeLookup.Get(x2, y2).r;
         }
 
-        Color32 beach = new Color32(0, 255, 0, 255);//new Color32(254, 0, 0, 0);
         List<Vector2Int> GetNeighbors(int x, int y)
         {
             return new List<Vector2Int>
@@ -493,6 +526,7 @@ public class WorldGenerator : MonoBehaviour
             };
         } 
 
+        Color32 beach = new Color32(0, 255, 0, 255);
         foreach (var x in Enumerable.Range(0, width * 4))
         {
             foreach(var y in Enumerable.Range(0, height * 4))
@@ -524,6 +558,108 @@ public class WorldGenerator : MonoBehaviour
                         }
                     }
                 }
+
+                var terrainType = biomeLookup.Get(x, y);
+                var terrainNoise = terrainTextureMap[x, y];
+
+                if (terrainType.r == 0)
+                {
+                    terrainTexture.Set(x, y, new Color32(0, 0, 0, 255));
+                }else if(terrainType.r == 32)
+                {
+                    Color32 sand = Color32.Lerp(new Color32(215, 192, 158, 0), new Color32(255, 246, 193, 0), terrainNoise);
+                    terrainTexture.Set(x, y, sand);
+                }else if (terrainType.r == 64)
+                {
+                    Color32 grass = Color32.Lerp(new Color32(2, 166, 155, 0), new Color32(60, 239, 124, 0), terrainNoise);
+                    terrainTexture.Set(x, y, grass);
+                }else if (terrainType.r == 128)
+                {
+                    Color32 forest = Color32.Lerp(new Color32(22, 181, 141, 0), new Color32(10, 145, 113, 0), terrainNoise);
+                    terrainTexture.Set(x, y, forest);
+                }else if (terrainType.r == 255)
+                {
+                    Color32 mountain = Color32.Lerp(new Color32(73, 60, 60, 0), new Color32(158, 157, 156, 0), terrainNoise);
+                    terrainTexture.Set(x, y, mountain);
+                }
+            }
+        }
+
+        IEnumerable<Vector3> calculateAllLerped(Vector3 a, Vector3 b, float sizeBetweenSteps)
+        {
+
+            var distance = Vector3.Distance(a, b);
+            var steps = Mathf.FloorToInt(distance / 4f);
+
+            if (steps == 0)
+            {
+                yield return a / 4;
+                yield return b / 4;
+                yield break;
+            }
+
+            for (int i = 0; i <= steps; i++)
+            {
+                yield return Vector3.Lerp(a, b, (float)i / steps) / 4;
+            }
+        }
+
+        HashSet<(Vector3Int, Vector3Int)> seenVertices = new();
+
+        List<Vector3> voronoiTerritoryEdgeVertices = new();
+        foreach(var site in territoryVoronoi.GeneratedSites)
+        {
+            foreach(var edge in site.Value.Edges)
+            {
+                var leftPoint = edge.LeftEndPoint.ToVector3();
+                var rightPoint = edge.RightEndPoint.ToVector3();
+
+                if (seenVertices.Contains((leftPoint.ToVector3Int(), rightPoint.ToVector3Int())) || seenVertices.Contains((rightPoint.ToVector3Int(), leftPoint.ToVector3Int())))
+                {
+                    continue;
+                }
+
+                seenVertices.Add((leftPoint.ToVector3Int(), rightPoint.ToVector3Int()));
+
+                //Calculate a line parallel to the edge that is 0.1 units away from the edge
+                var edgeDirection = (rightPoint - leftPoint).normalized;
+                var edgeNormal = new Vector3(-edgeDirection.z, 0, edgeDirection.x);
+
+                voronoiTerritoryEdgeVertices.AddRange(calculateAllLerped(leftPoint, rightPoint, 1f));
+                voronoiTerritoryEdgeVertices.AddRange(calculateAllLerped(leftPoint + edgeNormal, rightPoint + edgeNormal, 1f));
+                voronoiTerritoryEdgeVertices.AddRange(calculateAllLerped(leftPoint + edgeNormal * 2, rightPoint + edgeNormal, 1f));
+                voronoiTerritoryEdgeVertices.AddRange(calculateAllLerped(leftPoint + edgeNormal * 5, rightPoint + edgeNormal, 1f));
+                voronoiTerritoryEdgeVertices.AddRange(calculateAllLerped(leftPoint - edgeNormal, rightPoint - edgeNormal, 1f));
+                voronoiTerritoryEdgeVertices.AddRange(calculateAllLerped(leftPoint - edgeNormal * 2, rightPoint - edgeNormal, 1f));
+                voronoiTerritoryEdgeVertices.AddRange(calculateAllLerped(leftPoint - edgeNormal * 5, rightPoint - edgeNormal, 1f));
+            }
+        }
+
+        foreach(var site in biomeVoronoi.GeneratedSites)
+        {
+            foreach (var edge in site.Value.Edges)
+            {
+                var leftPoint = edge.LeftEndPoint.ToVector3();
+                var rightPoint = edge.RightEndPoint.ToVector3();
+
+                if (seenVertices.Contains((leftPoint.ToVector3Int(), rightPoint.ToVector3Int())) || seenVertices.Contains((rightPoint.ToVector3Int(), leftPoint.ToVector3Int())))
+                {
+                    continue;
+                }
+
+                seenVertices.Add((leftPoint.ToVector3Int(), rightPoint.ToVector3Int()));
+
+                //Calculate a line parallel to the edge that is 0.1 units away from the edge
+                var edgeDirection = (rightPoint - leftPoint).normalized;
+                var edgeNormal = new Vector3(-edgeDirection.z, 0, edgeDirection.x);
+
+                voronoiTerritoryEdgeVertices.AddRange(calculateAllLerped(leftPoint, rightPoint, 1f));
+                voronoiTerritoryEdgeVertices.AddRange(calculateAllLerped(leftPoint + edgeNormal, rightPoint + edgeNormal, 1f));
+                voronoiTerritoryEdgeVertices.AddRange(calculateAllLerped(leftPoint + edgeNormal * 2, rightPoint + edgeNormal, 1f));
+                voronoiTerritoryEdgeVertices.AddRange(calculateAllLerped(leftPoint + edgeNormal * 5, rightPoint + edgeNormal, 1f));
+                voronoiTerritoryEdgeVertices.AddRange(calculateAllLerped(leftPoint - edgeNormal, rightPoint - edgeNormal, 1f));
+                voronoiTerritoryEdgeVertices.AddRange(calculateAllLerped(leftPoint - edgeNormal * 2, rightPoint - edgeNormal, 1f));
+                voronoiTerritoryEdgeVertices.AddRange(calculateAllLerped(leftPoint - edgeNormal * 5, rightPoint - edgeNormal, 1f));
             }
         }
 
@@ -531,11 +667,23 @@ public class WorldGenerator : MonoBehaviour
 
         var combinedLookup = new LookupBuffer<Color32>(width * 4, height * 4, landTypeLookup.values.Zip(biomeLookup.values, (a, b) => a.r != 255 ? blue : b).ToArray());
 
+        Texture2D landTypeTexture2D = new(width * 4, height * 4);
+        landTypeTexture2D.SetPixels32(landTypeLookup.values);
+        landTypeTexture2D.Apply();
+
         Texture2D combinedTextures = new(width * 4, height * 4);
         combinedTextures.SetPixels32(combinedLookup.values);
         combinedTextures.Apply();
 
-        var (vertices, triangles, uvs) = GenerateTerrainMesh(landTypeLookup, biomeLookup, biomeThresholds);
+        var terrainTexture2D = new Texture2D(width * 4, height * 4);
+        terrainTexture2D.SetPixels32(terrainTexture.values);
+        terrainTexture2D.Apply();
+
+        planeDebug.GetComponent<MeshRenderer>().material.mainTexture = combinedTextures;
+        planeDebug2.GetComponent<MeshRenderer>().material.mainTexture = terrainTexture2D;
+        planeDebug3.GetComponent<MeshRenderer>().material.mainTexture = landTypeTexture2D;
+
+        var (vertices, triangles, uvs) = GenerateTerrainMesh(landTypeLookup, biomeLookup, biomeThresholds, voronoiTerritoryEdgeVertices);
 
         Debug.Log("Starting to generate chunks");
 
@@ -543,7 +691,7 @@ public class WorldGenerator : MonoBehaviour
 
         Debug.Log("Done generating chunks");
 
-        var splatTexture = GenerateSplatMap(combinedLookup);
+        //var splatTexture = GenerateSplatMap(combinedLookup);
 
         foreach (var chunk in chunks)
         {
@@ -557,9 +705,18 @@ public class WorldGenerator : MonoBehaviour
             meshFilter.sharedMesh = chunk;
 
             MeshRenderer meshRenderer = chunkObject.AddComponent<MeshRenderer>();
+
             meshRenderer.material = baseMaterial;
-            meshRenderer.material.mainTexture = splatTexture;
+            meshRenderer.material.mainTexture = terrainTexture2D;
+            //meshRenderer.material.mainTexture = landTypeTexture2D;
+
+            var collider = chunkObject.AddComponent<MeshCollider>();
+            collider.convex = true;
         }
+
+        var surface = gameObject.GetComponent<NavMeshSurface>();
+        surface.agentTypeID = NavMesh.GetSettingsByIndex(1).agentTypeID;
+        surface.BuildNavMesh();
 
         //gameObject.SetActive(false);
 
